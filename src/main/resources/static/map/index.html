@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Document</title>
+</head>
+<body style="margin: 0; padding: 0; overflow: hidden;">
+<input id="searchInput" type="text" placeholder="Search domain..."
+       style="font-size:1rem; border-radius:4px; border:1px solid #ccc; padding:2px 8px; width:180px;">
+<button onclick="window.movement.search(document.getElementById('searchInput').value)">Search</button>
+<div id="buttons">
+    <button onclick="movement.center()">&#8982;</button>
+</div>
+</body>
+<style>
+    .domain {
+        border: 2px solid black;
+        border-radius: 50%;
+        aspect-ratio: 1/1;
+        width: 100px;
+    }
+
+    #buttons {
+        position: fixed;
+        left: 10px;
+        bottom: 10px;
+        z-index: 1000;
+
+        button {
+            background: transparent;
+            border: none;
+            font-size: 2rem;
+            margin: 0;
+            padding: 0;
+            border-radius: 50%;
+            width: 2rem;
+
+            &:hover {
+                cursor: pointer;
+                background: rgba(81, 81, 81, 0.15);
+            }
+        }
+    }
+</style>
+<script>
+    class SceneManager {
+        constructor(objects) {
+            this.objects = objects;
+        }
+
+        add(object) {
+            this.objects.push(object);
+        }
+
+        remove(object) {
+            const index = this.objects.indexOf(object);
+            if (index > -1) {
+                this.objects.splice(index, 1);
+            }
+        }
+    }
+
+    class SceneObject {
+        constructor(x, y, scale, data) {
+            this.x = x;
+            this.y = y;
+            this.scale = scale;
+            this.data = data;
+        }
+    }
+
+    const data = [
+        { 'domain': 'example.com', 'foundOnDomain': 'example2.com' },
+        { 'domain': 'example2.com', 'foundOnDomain': 'example4.com' },
+        { 'domain': 'example4.com', 'foundOnDomain': 'example5.com' },
+        { 'domain': 'example5.com', 'foundOnDomain': 'example.com' },
+        { 'domain': 'example6.com', 'foundOnDomain': 'example7.com' },
+        { 'domain': 'example7.com', 'foundOnDomain': 'example8.com' },
+        { 'domain': 'example8.com', 'foundOnDomain': 'example6.com' },
+        { 'domain': 'example2.com', 'foundOnDomain': 'example6.com' },
+        { 'domain': 'example9.com', 'foundOnDomain': 'example10.com' },
+        { 'domain': 'example10.com', 'foundOnDomain': 'example11.com' },
+        { 'domain': 'example11.com', 'foundOnDomain': 'example12.com' },
+        { 'domain': 'example12.com', 'foundOnDomain': 'example9.com' },
+        { 'domain': 'example13.com', 'foundOnDomain': 'example14.com' },
+        { 'domain': 'example14.com', 'foundOnDomain': 'example15.com' },
+        { 'domain': 'example15.com', 'foundOnDomain': 'example13.com' },
+        { 'domain': 'example16.com', 'foundOnDomain': 'example17.com' },
+        { 'domain': 'example17.com', 'foundOnDomain': 'example18.com' },
+        { 'domain': 'example18.com', 'foundOnDomain': 'example19.com' },
+        { 'domain': 'example19.com', 'foundOnDomain': 'example16.com' },
+        { 'domain': 'example20.com', 'foundOnDomain': 'example21.com' },
+        { 'domain': 'example21.com', 'foundOnDomain': 'example22.com' },
+        { 'domain': 'example22.com', 'foundOnDomain': 'example23.com' },
+        { 'domain': 'example23.com', 'foundOnDomain': 'example.com' }
+    ];
+
+    const sceneManager = new SceneManager([]);
+
+    function prepare(data) {
+        const result = {};
+        data.forEach(item => {
+            const domain = item.domain.toLowerCase();
+            if (!result[domain]) {
+                result[domain] = {
+                    domain: item.domain,
+                    foundOnDomain: []
+                };
+            }
+            result[domain].foundOnDomain.push(item.foundOnDomain);
+        });
+        return Object.values(result);
+    }
+
+    // --- Zoom and Pan State ---
+    let scale = 1;
+    let offsetX = 0;
+    let offsetY = 0;
+    let isPanning = false;
+    let startPan = { x: 0, y: 0 };
+    let lastOffset = { x: 0, y: 0 };
+
+    // --- Animation Control ---
+    let running = true;
+    let animationFrameId = null;
+
+    // --- Canvas and Scene Setup ---
+    let canvas, ctx, preparedData, centerX, centerY, layerRadius, layers;
+
+    function setupScene() {
+        preparedData = prepare(data);
+
+        if (!canvas) {
+            canvas = document.createElement('canvas');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            canvas.style.border = '1px solid #ccc';
+            canvas.tabIndex = 0; // Make canvas focusable for keyboard events
+            document.body.appendChild(canvas);
+            ctx = canvas.getContext('2d');
+        }
+
+        // Calculate layers
+        layers = [];
+        let layer = 0, idx = 0;
+        while (idx < preparedData.length) {
+            const layerCount = Math.pow(2, layer) * 4;
+            layers.push(preparedData.slice(idx, idx + layerCount));
+            idx += layerCount;
+            layer++;
+        }
+
+        centerX = (window.innerWidth / 2);
+        centerY = (window.innerHeight / 2);
+        layerRadius = 200;
+
+        // Add objects to sceneManager
+        sceneManager.objects = [];
+        if (layers[0] && layers[0][0]) {
+            const item = layers[0][0];
+            const size = 25 + Math.floor(item.foundOnDomain.length / 2);
+            sceneManager.add(new SceneObject(centerX, centerY, 1, { domain: item.domain, size }));
+        }
+        for (let l = 1; l < layers.length; l++) {
+            const items = layers[l];
+            const n = items.length;
+            const radius = layerRadius * l;
+            for (let i = 0; i < n; i++) {
+                const angle = (2 * Math.PI * i) / n;
+                const item = items[i];
+                const x = centerX + radius * Math.cos(angle);
+                const y = centerY + radius * Math.sin(angle);
+                const size = 25 + Math.floor(item.foundOnDomain.length / 2);
+                sceneManager.add(new SceneObject(x, y, 1, { domain: item.domain, size }));
+            }
+        }
+    }
+
+    function drawScene() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        ctx.save();
+        ctx.translate(offsetX, offsetY);
+        ctx.scale(scale, scale);
+
+        // Draw connection lines
+        sceneManager.objects.forEach(object => {
+            const from = object;
+            const foundOnDomains = preparedData.find(
+                d => d.domain === from.data.domain
+            )?.foundOnDomain || [];
+            foundOnDomains.forEach(targetDomain => {
+                const to = sceneManager.objects.find(
+                    o => o.data.domain === targetDomain
+                );
+                if (to) {
+                    ctx.beginPath();
+                    ctx.moveTo(from.x, from.y);
+                    ctx.lineTo(to.x, to.y);
+                    ctx.strokeStyle = '#888';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                }
+            });
+        });
+
+        // Draw all objects
+        sceneManager.objects.forEach(object => {
+            ctx.beginPath();
+            ctx.arc(object.x, object.y, object.data.size, 0, 2 * Math.PI);
+            ctx.fillStyle = '#fff';
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = '#000';
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(object.data.domain, object.x, object.y + 4);
+        });
+
+        ctx.restore();
+    }
+
+    function animate() {
+        if (!running) return;
+        drawScene();
+        animationFrameId = requestAnimationFrame(animate);
+    }
+
+    // --- Mouse Events for Pan and Zoom ---
+    function addInteraction() {
+        let draggingNode = null;
+        let dragOffset = { x: 0, y: 0 };
+
+        canvas.addEventListener('keydown', (e) => {
+            if (e.key === 'w' || e.key === 'ArrowUp') {
+                offsetY -= 10 / scale; // Move up
+            }
+            if (e.key === 's' || e.key === 'ArrowDown') {
+                offsetY += 10 / scale; // Move down
+            }
+            if (e.key === 'a' || e.key === 'ArrowLeft') {
+                offsetX -= 10 / scale; // Move left
+            }
+            if (e.key === 'd' || e.key === 'ArrowRight') {
+                offsetX += 10 / scale; // Move right
+            }
+        });
+
+        canvas.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+            const mouseX = (e.clientX - offsetX) / scale;
+            const mouseY = (e.clientY - offsetY) / scale;
+            // Check if mouse is over a node
+            for (let i = sceneManager.objects.length - 1; i >= 0; i--) {
+                const obj = sceneManager.objects[i];
+                const dx = mouseX - obj.x;
+                const dy = mouseY - obj.y;
+                if (Math.sqrt(dx * dx + dy * dy) <= obj.data.size) {
+                    draggingNode = obj;
+                    dragOffset.x = dx;
+                    dragOffset.y = dy;
+                    isPanning = false;
+                    return;
+                }
+            }
+            // If not on a node, start panning
+            isPanning = true;
+            startPan = { x: e.clientX, y: e.clientY };
+            lastOffset = { x: offsetX, y: offsetY };
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (draggingNode) {
+                const mouseX = (e.clientX - offsetX) / scale;
+                const mouseY = (e.clientY - offsetY) / scale;
+                draggingNode.x = mouseX - dragOffset.x;
+                draggingNode.y = mouseY - dragOffset.y;
+            } else if (isPanning) {
+                offsetX = lastOffset.x + (e.clientX - startPan.x);
+                offsetY = lastOffset.y + (e.clientY - startPan.y);
+            }
+        });
+
+        window.addEventListener('mouseup', () => {
+            isPanning = false;
+            draggingNode = null;
+        });
+
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const mouseX = (e.clientX - offsetX) / scale;
+            const mouseY = (e.clientY - offsetY) / scale;
+            const delta = e.deltaY < 0 ? 1.1 : 0.9;
+            scale *= delta;
+            // Keep zoom centered on mouse
+            offsetX -= (mouseX * (delta - 1)) * scale;
+            offsetY -= (mouseY * (delta - 1)) * scale;
+        }, { passive: false });
+    }
+
+    // --- Movement Control for Console ---
+    window.movement = {
+        stop: function() {
+            running = false;
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            return 'Movement stopped.';
+        },
+        start: function() {
+            if (!running) {
+                running = true;
+                animate();
+            }
+            return 'Movement started.';
+        },
+        center: function() {
+            offsetX = 0;
+            offsetY = 0;
+            scale = 1;
+            return 'Scene centered.';
+        },
+        search: function(domain) {
+            const centerXLocal = (window.innerWidth / 2);
+            const centerYLocal = (window.innerHeight / 2);
+            if (!domain || domain.trim() === '') {
+                // Reset to show all
+                setupScene();
+                offsetX = 0;
+                offsetY = 0;
+                scale = 1;
+                drawScene();
+                return 'Reset to show all domains.';
+            }
+            const lowerDomain = domain.toLowerCase();
+            const found = preparedData.find(d => d.domain.toLowerCase() === lowerDomain);
+            if (!found) return 'Domain not found.';
+
+            // BFS to find all connected domains (undirected)
+            const visited = new Set();
+            const queue = [found.domain];
+            while (queue.length > 0) {
+                const current = queue.shift();
+                if (visited.has(current)) continue;
+                visited.add(current);
+                const node = preparedData.find(d => d.domain === current);
+                if (node) {
+                    // Add outgoing connections
+                    node.foundOnDomain.forEach(d => {
+                        if (!visited.has(d)) queue.push(d);
+                    });
+                    // Add incoming connections
+                    preparedData.forEach(d => {
+                        if (d.foundOnDomain.includes(current) && !visited.has(d.domain)) {
+                            queue.push(d.domain);
+                        }
+                    });
+                }
+            }
+            // Prepare objects for drawing
+            sceneManager.objects = [];
+            const connectedArr = Array.from(visited).map(dom => preparedData.find(d => d.domain === dom)).filter(Boolean);
+            // Center the searched domain
+            const centerObj = connectedArr.find(d => d.domain === found.domain);
+            const size = 25 + Math.floor(centerObj.foundOnDomain.length / 2);
+            sceneManager.add(new SceneObject(centerXLocal, centerYLocal, 1, { domain: centerObj.domain, size }));
+            // Place the rest in a circle
+            const others = connectedArr.filter(d => d.domain !== found.domain);
+            const radius = 200;
+            others.forEach((item, i) => {
+                const angle = (2 * Math.PI * i) / others.length;
+                const x = centerXLocal + radius * Math.cos(angle);
+                const y = centerYLocal + radius * Math.sin(angle);
+                const itemSize = 25 + Math.floor(item.foundOnDomain.length / 2);
+                sceneManager.add(new SceneObject(x, y, 1, { domain: item.domain, size: itemSize }));
+            });
+            offsetX = 0;
+            offsetY = 0;
+            scale = 1;
+            drawScene();
+            return `Showing "${found.domain}" and all connected domains.`;
+        }
+    };
+
+    function resizeCanvas() {
+        if (canvas) {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            centerX = (window.innerWidth / 2);
+            centerY = (window.innerHeight / 2);
+            drawScene();
+        }
+    }
+
+    window.addEventListener('resize', resizeCanvas);
+
+    // --- Initialize ---
+    setupScene();
+    addInteraction();
+    animate();
+</script>
+</html>
