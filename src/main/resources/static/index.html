@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Crawler Queue Visualization</title>
+</head>
+<body>
+    <table>
+        <thead>
+            <tr>
+                <th>Domain</th>
+                <th>Found On</th>
+                <th>Status</th>
+                <th>Last Message</th>
+                <th>Last Crawled</th>
+            </tr>
+        </thead>
+        <tbody id="queue-data">
+            <!-- Data will be populated here -->
+        </tbody>
+    </table>
+</body>
+<script>
+    window.addEventListener('load', (event) => {
+        console.log('Page is fully loaded');
+        fetchQueueData();
+    })
+
+    async function fetchQueueData() {
+        try {
+            const response = await fetch("/api/v1/crawler-queue/");
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            const data = await response.json();
+            renderQueueData(data);
+        } catch (error) {
+            console.error('There has been a problem with your fetch operation:', error);
+        }
+    }
+
+    function renderQueueData(data) {
+        const queueDataElement = document.getElementById('queue-data');
+
+        for (const item of data) {
+            const tr = document.createElement('tr');
+
+            let urlCell = document.createElement('td');
+            let foundOn = document.createElement('td');
+            let status = document.createElement('td');
+            let lastMessage = document.createElement('td');
+            let lastCrawled = document.createElement('td');
+
+            const domain = getDomainFromUrl(item.url);
+
+            // Create favicon <img>
+            const favicon = document.createElement('img');
+            favicon.alt = 'favicon';
+            favicon.style.width = '16px';
+            favicon.style.height = '16px';
+            favicon.style.marginRight = '6px';
+            favicon.style.verticalAlign = 'middle';
+
+            // Check sessionStorage for cached favicon URL
+            const cachedFavicon = sessionStorage.getItem(`favicon:${domain}`);
+            if (cachedFavicon) {
+                favicon.src = cachedFavicon;
+            } else {
+                const faviconUrl = `https://${domain}/favicon.ico`;
+                favicon.src = faviconUrl;
+
+                // Cache the favicon only if it loads successfully
+                favicon.onload = () => {
+                    sessionStorage.setItem(`favicon:${domain}`, faviconUrl);
+                };
+
+                // If the image fails to load, don't store it and hide it
+                favicon.onerror = () => {
+                    favicon.style.display = 'none';
+                };
+            }
+
+            // Add favicon + domain URL to the cell
+            urlCell.appendChild(favicon);
+            urlCell.appendChild(document.createTextNode(item.url));
+
+            foundOn.textContent = item.foundOnDomain;
+            status.textContent = item.status;
+            lastMessage.textContent = item.lastMessage;
+            lastCrawled.textContent = item.lastCrawled ? new Date(item.lastCrawled).toLocaleString() : 'N/A';
+
+            tr.appendChild(urlCell);
+            tr.appendChild(foundOn);
+            tr.appendChild(status);
+            tr.appendChild(lastMessage);
+            tr.appendChild(lastCrawled);
+
+            queueDataElement.appendChild(tr);
+        }
+    }
+
+    function getDomainFromUrl(urlString) {
+        try {
+            return new URL(urlString).hostname;
+        } catch (e) {
+            return ''; // fallback for invalid URLs
+        }
+    }
+</script>
+</html>

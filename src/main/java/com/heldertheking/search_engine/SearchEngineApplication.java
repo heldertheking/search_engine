@@ -27,12 +27,11 @@ public class SearchEngineApplication {
     public void onShutdown() {
         System.out.println("Application is shutting down, stopping all crawlers...");
         Crawler.stop();
-        // Mark in-progress items as FAILED
         var inProgressItems = queueRepository.findAll().stream()
             .filter(item -> item.getStatus() == CrawlerQueueItem.CrawlerStatus.IN_PROGRESS)
             .toList();
         for (var item : inProgressItems) {
-            item.setStatus(CrawlerQueueItem.CrawlerStatus.FAILED);
+            item.setStatus(CrawlerQueueItem.CrawlerStatus.PENDING);
             item.setLastMessage("Application was shutdown");
             item.setLastCrawledAt(Instant.now());
             queueRepository.save(item);

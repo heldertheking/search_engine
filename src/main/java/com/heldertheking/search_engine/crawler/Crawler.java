@@ -17,6 +17,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.net.ConnectException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.time.Instant;
@@ -147,6 +148,8 @@ public class Crawler {
 
         if (level > maxCrawlLevel) {
             log.debug("Max crawl level reached: {} for URL: {}", maxCrawlLevel, url);
+
+
             return;
         }
 
@@ -221,7 +224,7 @@ public class Crawler {
                                     queueRepository.save(
                                         CrawlerQueueItem.builder()
                                             .url(baseNext)
-                                            .status(CrawlerQueueItem.CrawlerStatus.STOPPED)
+                                            .status(CrawlerQueueItem.CrawlerStatus.PENDING)
                                             .lastMessage("Discovered new domain by crawler, awaiting approval.")
                                             .foundOnDomain(baseCurrent)
                                             .build()
