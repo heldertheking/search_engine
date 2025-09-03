@@ -100,6 +100,7 @@
 
     function prepare(data) {
         const result = {};
+        window.fetchData = data
         data.forEach(item => {
             const domain = item.domain.toLowerCase();
             if (!result[domain]) {
@@ -128,8 +129,23 @@
     // --- Canvas and Scene Setup ---
     let canvas, ctx, preparedData, centerX, centerY, layerRadius, layers;
 
-    function setupScene() {
-        preparedData = prepare(data);
+    async function fetchData() {
+        try {
+            const response = await fetch("/api/v1/crawler-queue/")
+            const data = await response.json();
+            console.log(data)
+            return data.map(item => ({
+                domain: item.url,
+                foundOnDomain: item.foundOnDomain
+            }));
+        } catch (error) {
+            console.error('Error fetching data:', error);
+            return [];
+        }
+    }
+
+    async function setupScene() {
+        preparedData = prepare(await fetchData());
 
         if (!canvas) {
             canvas = document.createElement('canvas');
@@ -160,7 +176,7 @@
         if (layers[0] && layers[0][0]) {
             const item = layers[0][0];
             const size = 25 + Math.floor(item.foundOnDomain.length / 2);
-            sceneManager.add(new SceneObject(centerX, centerY, 1, { domain: item.domain, size }));
+            sceneManager.add(new SceneObject(centerX, centerY, 1, {domain: item.domain, size}));
         }
         for (let l = 1; l < layers.length; l++) {
             const items = layers[l];
@@ -172,7 +188,7 @@
                 const x = centerX + radius * Math.cos(angle);
                 const y = centerY + radius * Math.sin(angle);
                 const size = 25 + Math.floor(item.foundOnDomain.length / 2);
-                sceneManager.add(new SceneObject(x, y, 1, { domain: item.domain, size }));
+                sceneManager.add(new SceneObject(x, y, 1, {domain: item.domain, size}));
             }
         }
     }
@@ -396,8 +412,12 @@
     window.addEventListener('resize', resizeCanvas);
 
     // --- Initialize ---
-    setupScene();
-    addInteraction();
-    animate();
+    async function initialize() {
+        await setupScene(); // Ensure the canvas is created
+        addInteraction();   // Add event listeners after canvas is initialized
+        animate();          // Start the animation
+    }
+
+    initialize();
 </script>
 </html>
